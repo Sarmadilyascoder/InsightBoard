@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a1018" />
+    <meta
+      name="description"
+      content="InsightBoard — a real-data World Development Indicators dashboard by Sarmad Ilyas."
+    />
+    <title>InsightBoard — Development data, made legible</title>
+    <link rel="preconnect" href="https://api.worldbank.org" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="InsightBoard navigation">
+        <a class="brand" href="#overview" aria-label="InsightBoard home">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>Insight<span>Board</span></span>
+        </a>
+        <div class="sidebar-label">Workspace</div>
+        <nav class="side-nav">
+          <a class="active" href="#overview"><span aria-hidden="true">◈</span> Overview</a>
+          <a href="#compare"><span aria-hidden="true">↗</span> Compare</a>
+          <a href="#signals"><span aria-hidden="true">⌁</span> Signals</a>
+          <a href="#method"><span aria-hidden="true">◎</span> Method</a>
+        </nav>
+        <div class="side-source">
+          <span class="eyebrow">Data source</span>
+          <strong>World Development Indicators</strong>
+          <a href="https://data.worldbank.org/" target="_blank" rel="noreferrer">Open source ↗</a>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="mobile-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span> InsightBoard</div>
+          <div class="topbar-actions">
+            <span class="data-status" id="data-status"><i></i> Connecting to data</span>
+            <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh data" title="Refresh data">↻</button>
+          </div>
+        </header>
+
+        <section class="hero" id="overview" aria-labelledby="page-title">
+          <div>
+            <p class="eyebrow">Economic signals / 2015–latest available</p>
+            <h1 id="page-title">Development data,<br /><em>made legible.</em></h1>
+            <p class="hero-copy">A focused view of economic scale, growth and digital access across South Asia—built from live World Bank indicator data.</p>
+          </div>
+          <div class="hero-meta">
+            <span class="meta-key">Selected market</span>
+            <strong id="selected-market-label">Pakistan</strong>
+            <span class="live-dot"><i></i> Live public data</span>
+          </div>
+        </section>
+
+        <section class="control-bar" aria-label="Dashboard filters">
+          <label class="control-field">
+            <span>Market</span>
+            <select id="country-select" aria-label="Select market"></select>
+          </label>
+          <label class="control-field metric-field">
+            <span>Trend metric</span>
+            <select id="indicator-select" aria-label="Select trend metric"></select>
+          </label>
+          <div class="control-note"><span>Latest figures</span><strong id="latest-year">—</strong></div>
+        </section>
+
+        <div id="error-state" class="error-state" role="alert" hidden>
+          <div><strong>Live data is temporarily unavailable.</strong><span>InsightBoard could not reach the World Bank API. Please refresh to try again.</span></div>
+          <button id="retry-button" type="button">Try again</button>
+        </div>
+
+        <section class="kpi-grid" aria-label="Key indicators" id="kpi-grid">
+          <article class="kpi-card loading-card"><span></span><b></b><small></small></article>
+          <article class="kpi-card loading-card"><span></span><b></b><small></small></article>
+          <article class="kpi-card loading-card"><span></span><b></b><small></small></article>
+          <article class="kpi-card loading-card"><span></span><b></b><small></small></article>
+        </section>
+
+        <section class="dashboard-grid" id="compare">
+          <article class="panel trend-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Trend line</p>
+                <h2 id="trend-title">Loading indicator trend</h2>
+              </div>
+              <span class="chart-legend"><i></i><span id="chart-country-label">—</span></span>
+            </div>
+            <div class="chart-wrap" id="trend-chart" aria-label="Indicator trend chart" aria-live="polite"></div>
+            <div class="chart-foot"><span id="chart-range">Fetching observations</span><span id="chart-change">—</span></div>
+          </article>
+
+          <article class="panel benchmark-panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">Regional pulse</p>
+                <h2>GDP growth comparison</h2>
+              </div>
+              <span class="unit-label">Annual %</span>
+            </div>
+            <div class="benchmark-list" id="benchmark-list" aria-live="polite"></div>
+          </article>
+        </section>
+
+        <section class="signals-section" id="signals">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Signals table</p>
+              <h2>Latest observed values</h2>
+            </div>
+            <span class="muted-note">No values are estimated by InsightBoard.</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Indicator</th><th>Latest value</th><th>Observed year</th><th>Definition</th></tr></thead>
+              <tbody id="signals-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="method-card" id="method">
+          <div class="method-number">01</div>
+          <div>
+            <p class="eyebrow">Method note</p>
+            <h2>Built on an open, cited data source.</h2>
+            <p>Every figure is requested directly from the World Bank Indicators API when you open or refresh the dashboard. Different indicators can have different latest reporting years, so InsightBoard always shows the observed year beside each value.</p>
+          </div>
+          <a href="https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation" target="_blank" rel="noreferrer">Read API documentation ↗</a>
+        </section>
+
+        <footer>
+          <span>Designed and built by <strong>Sarmad Ilyas</strong></span>
+          <span>InsightBoard · World Bank open data</span>
+        </footer>
+      </main>
+    </div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

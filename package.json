@@ -1,0 +1,12 @@
+{
+  "name": "insightboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/metrics.test.mjs",
+    "check": "node --check app.js && node --check metrics.js && node tests/metrics.test.mjs",
+    "build": "node scripts/build.mjs",
+    "serve": "npx serve ."
+  }
+}
