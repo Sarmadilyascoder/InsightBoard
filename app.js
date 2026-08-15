@@ -1,4 +1,5 @@
-import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, percentChange } from "./metrics.js";
+// Version the dependency URL so a browser that cached an older metrics module cannot pair it with this newer application module after a GitHub Pages release.
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, percentChange } from "./metrics.js?v=global-country-1";
 
 const state = {
   selectedCountry: "PAK",
