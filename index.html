@@ -22,7 +22,7 @@
         <div class="side-source"><span class="eyebrow">Data source</span><strong>World Development Indicators</strong><a href="https://data.worldbank.org/" target="_blank" rel="noreferrer">Open source ↗</a></div>
       </aside>
       <main class="main-content">
-        <header class="topbar"><div class="mobile-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span> InsightBoard</div><div class="topbar-actions"><span class="data-status" id="data-status"><i></i> Connecting to data</span><button class="icon-button" id="refresh-button" type="button" aria-label="Refresh data" title="Refresh data">↻</button></div></header>
+        <header class="topbar"><div class="mobile-brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span> InsightBoard</div><div class="topbar-actions"><span class="data-status" id="data-status"><i></i> Connecting to data</span><button class="export-button" id="export-excel" type="button" title="Download selected dashboard data as an Excel workbook">Excel</button><button class="export-button pdf-export" id="export-pdf" type="button" title="Download selected dashboard as a PDF report">PDF</button><button class="icon-button" id="refresh-button" type="button" aria-label="Refresh data" title="Refresh data">↻</button></div></header>
         <section class="hero" id="overview" aria-labelledby="page-title"><div><p class="eyebrow">Economic signals / 2015–latest available</p><h1 id="page-title">Development data,<br /><em>made legible.</em></h1><p class="hero-copy">A focused view of economic scale, growth and digital access for countries worldwide—built from live World Bank indicator data.</p></div><div class="hero-meta"><span class="meta-key">Selected country</span><strong id="selected-market-label">Pakistan</strong><span class="live-dot"><i></i> Live public data</span></div></section>
         <section class="control-bar" aria-label="Dashboard filters">
           <label class="control-field country-field"><span>Search country</span><input id="country-search" list="country-options" type="search" autocomplete="off" placeholder="Search United States, USA…" aria-label="Search and select a country" aria-describedby="country-count" /><datalist id="country-options"></datalist><small id="country-count">Loading countries…</small></label>
@@ -38,6 +38,6 @@
         <footer><span>Designed and built by <strong>Sarmad Ilyas</strong></span><span>InsightBoard · World Bank open data</span></footer>
       </main>
     </div>
-    <script type="module" src="app.js?v=custom-csv-1"></script>
+    <script type="module" src="app.js?v=export-1"></script>
   </body>
 </html>

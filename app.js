@@ -1,5 +1,5 @@
 // Version the dependency URL so a browser that cached an older metrics module cannot pair it with this newer application module after a GitHub Pages release.
-import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, parseCustomCsv, percentChange } from "./metrics.js?v=custom-data-1";
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, parseCustomCsv, percentChange } from "./metrics.js?v=export-1";
 
 const state = {
   selectedCountry: "PAK",
@@ -21,6 +21,8 @@ const customFileName = document.querySelector("#custom-file-name");
 const sampleDownload = document.querySelector("#sample-download");
 const returnLive = document.querySelector("#return-live");
 const csvHelp = document.querySelector("#csv-help");
+const exportExcelButton = document.querySelector("#export-excel");
+const exportPdfButton = document.querySelector("#export-pdf");
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -201,6 +203,175 @@ function downloadSampleCsv() {
   URL.revokeObjectURL(url);
 }
 
+function exportSnapshot() {
+  return createDashboardExport({ country: selectedCountry(), selectedIndicator: state.selectedIndicator, records: state.records, countries: comparisonCountries() });
+}
+
+function exportFileName(extension) {
+  const slug = selectedCountry().name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "dashboard";
+  return `insightboard-${slug}-${new Date().toISOString().slice(0, 10)}.${extension}`;
+}
+
+function setExportBusy(button, busy, label) {
+  button.disabled = busy;
+  button.textContent = busy ? "Preparing…" : label;
+}
+
+function exportRows(snapshot) {
+  return {
+    dashboard: [["InsightBoard dashboard export"], ["Country", snapshot.country], ["Data mode", state.mode === "custom" ? "Private custom CSV" : "World Bank live data"], ["Generated", new Date().toLocaleString()], [], ["KPI", "Value", "Observed year"], ...snapshot.kpis.map((item) => [item.indicator, formatValue(item.value, item.unit), item.year || "Not reported"])],
+    trend: [[`${snapshot.trend.label} trend`, snapshot.country], ["Year", "Value"], ...snapshot.trend.series.map((point) => [point.year, point.value])],
+    comparison: [["GDP growth comparison", "Latest available"], ["Country", "Value", "Observed year"], ...snapshot.comparison.map((item) => [item.country, item.value, item.year || "Not reported"])],
+    signals: [["Latest observed values", snapshot.country], ["Indicator", "Value", "Observed year", "Definition"], ...snapshot.signals.map((item) => [item.indicator, item.value === null ? "Not reported" : item.value, item.year || "Not reported", item.definition])],
+  };
+}
+
+async function exportExcel() {
+  if (!state.records.size) {
+    setStatus("Wait for dashboard data", "error");
+    return;
+  }
+  setExportBusy(exportExcelButton, true, "Excel");
+  try {
+    const module = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
+    const XLSX = module.default || module;
+    const sheets = exportRows(exportSnapshot());
+    const workbook = XLSX.utils.book_new();
+    Object.entries(sheets).forEach(([name, rows]) => {
+      const sheet = XLSX.utils.aoa_to_sheet(rows);
+      sheet["!cols"] = [{ wch: 28 }, { wch: 22 }, { wch: 18 }, { wch: 52 }];
+      XLSX.utils.book_append_sheet(workbook, sheet, name[0].toUpperCase() + name.slice(1));
+    });
+    XLSX.writeFile(workbook, exportFileName("xlsx"), { compression: true });
+    setStatus("Excel downloaded", state.mode === "custom" ? "custom" : "live");
+  } catch (error) {
+    console.error("InsightBoard Excel export failed", error);
+    setStatus("Excel export unavailable", "error");
+  } finally {
+    setExportBusy(exportExcelButton, false, "Excel");
+  }
+}
+
+async function chartPng() {
+  const source = document.querySelector("#trend-chart svg");
+  if (!source) return null;
+  const copy = source.cloneNode(true);
+  copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  copy.insertAdjacentHTML("afterbegin", "<style>.grid-line{stroke:#cbddee;stroke-opacity:.35;stroke-dasharray:3 5}.axis-label{fill:#506275;font:9px monospace}</style>");
+  const url = URL.createObjectURL(new Blob([copy.outerHTML], { type: "image/svg+xml" }));
+  try {
+    const image = new Image();
+    await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = url; });
+    const canvas = document.createElement("canvas");
+    canvas.width = 1400;
+    canvas.height = 500;
+    const context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/png");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function addPdfTable(doc, title, headers, rows, y) {
+  const left = 12;
+  const widths = headers.length === 4 ? [42, 34, 25, 85] : headers.length === 3 ? [75, 48, 57] : [100, 80];
+  const drawHeader = () => {
+    doc.setFillColor(15, 27, 39);
+    doc.rect(left, y, 186, 7, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(7);
+    let x = left + 2;
+    headers.forEach((header, index) => { doc.text(header, x, y + 4.7); x += widths[index]; });
+    y += 7;
+  };
+  doc.setTextColor(20, 32, 45);
+  doc.setFontSize(12);
+  doc.text(title, left, y);
+  y += 6;
+  drawHeader();
+  rows.forEach((row) => {
+    const textRows = row.map((cell, index) => doc.splitTextToSize(String(cell), widths[index] - 4));
+    const height = Math.max(7, ...textRows.map((lines) => lines.length * 4 + 3));
+    if (y + height > 283) {
+      doc.addPage();
+      y = 18;
+      drawHeader();
+    }
+    doc.setDrawColor(220, 228, 235);
+    doc.line(left, y + height, left + 186, y + height);
+    doc.setTextColor(35, 49, 62);
+    doc.setFontSize(8);
+    let x = left + 2;
+    textRows.forEach((lines, index) => { doc.text(lines, x, y + 4.5); x += widths[index]; });
+    y += height;
+  });
+  return y + 10;
+}
+
+async function exportPdf() {
+  if (!state.records.size) {
+    setStatus("Wait for dashboard data", "error");
+    return;
+  }
+  setExportBusy(exportPdfButton, true, "PDF");
+  try {
+    const module = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.2/+esm");
+    const JsPdf = module.jsPDF || module.default?.jsPDF;
+    if (!JsPdf) throw new Error("PDF library unavailable");
+    const snapshot = exportSnapshot();
+    const doc = new JsPdf({ unit: "mm", format: "a4" });
+    doc.setTextColor(10, 16, 24);
+    doc.setFontSize(22);
+    doc.text("InsightBoard", 12, 18);
+    doc.setFontSize(13);
+    doc.text(`${snapshot.country} dashboard report`, 12, 26);
+    doc.setTextColor(82, 99, 116);
+    doc.setFontSize(8);
+    doc.text(`Source: ${state.mode === "custom" ? "Private custom CSV in this browser" : "World Bank live data"} · Generated ${new Date().toLocaleString()}`, 12, 33);
+    doc.setDrawColor(210, 219, 227);
+    doc.line(12, 37, 198, 37);
+    snapshot.kpis.forEach((item, index) => {
+      const x = 12 + (index % 2) * 94;
+      const y = 46 + Math.floor(index / 2) * 23;
+      doc.setDrawColor(220, 228, 235);
+      doc.roundedRect(x, y, 87, 18, 2, 2, "S");
+      doc.setTextColor(78, 93, 109);
+      doc.setFontSize(7);
+      doc.text(item.indicator.toUpperCase(), x + 4, y + 5);
+      doc.setTextColor(10, 16, 24);
+      doc.setFontSize(13);
+      doc.text(formatValue(item.value, item.unit), x + 4, y + 13);
+      doc.setTextColor(100, 114, 128);
+      doc.setFontSize(7);
+      doc.text(item.year || "Not reported", x + 70, y + 13, { align: "right" });
+    });
+    doc.setTextColor(20, 32, 45);
+    doc.setFontSize(12);
+    doc.text(`${snapshot.trend.label} trend`, 12, 98);
+    const png = await chartPng();
+    if (png) doc.addImage(png, "PNG", 12, 103, 186, 66);
+    else {
+      doc.setFontSize(9);
+      doc.text("A chart image was not available; the underlying trend values are included on the next page.", 12, 108);
+    }
+    doc.addPage();
+    let y = addPdfTable(doc, "GDP growth comparison", ["Country", "Value", "Observed year"], snapshot.comparison.map((item) => [item.country, formatValue(item.value, "percent"), item.year || "Not reported"]), 18);
+    addPdfTable(doc, "Latest observed values", ["Indicator", "Value", "Observed year", "Definition"], snapshot.signals.map((item) => [item.indicator, formatValue(item.value, item.unit), item.year || "Not reported", item.definition]), y);
+    doc.addPage();
+    addPdfTable(doc, `${snapshot.trend.label} trend · ${snapshot.country}`, ["Year", "Value"], snapshot.trend.series.map((point) => [point.year, formatValue(point.value, snapshot.trend.unit)]), 18);
+    doc.save(exportFileName("pdf"));
+    setStatus("PDF downloaded", state.mode === "custom" ? "custom" : "live");
+  } catch (error) {
+    console.error("InsightBoard PDF export failed", error);
+    setStatus("PDF export unavailable", "error");
+  } finally {
+    setExportBusy(exportPdfButton, false, "PDF");
+  }
+}
+
 function rowsFor(indicatorCode, countryCode) {
   return (state.records.get(indicatorCode) || []).filter((row) => row.countryiso3code === countryCode);
 }
@@ -337,6 +508,8 @@ retryButton.addEventListener("click", loadData);
 customFile.addEventListener("change", loadCustomCsv);
 sampleDownload.addEventListener("click", downloadSampleCsv);
 returnLive.addEventListener("click", returnToLiveData);
+exportExcelButton.addEventListener("click", exportExcel);
+exportPdfButton.addEventListener("click", exportPdf);
 
 async function initialise() {
   setStatus("Loading country directory", "loading");

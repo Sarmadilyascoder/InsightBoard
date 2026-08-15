@@ -166,3 +166,34 @@ export function parseCustomCsv(text) {
   records.forEach((rows) => rows.sort((first, second) => Number(second.date) - Number(first.date)));
   return { countries, records, rowCount: validRows };
 }
+
+/**
+ * Build a plain, export-ready view of the current dashboard without touching
+ * the DOM. Both live World Bank data and custom CSV data use this same shape.
+ */
+export function createDashboardExport({ country, selectedIndicator, records, countries }) {
+  const rowsFor = (indicatorCode, countryCode) => (records.get(indicatorCode) || []).filter((row) => row.countryiso3code === countryCode);
+  const kpiCodes = ["NY.GDP.MKTP.CD", "NY.GDP.MKTP.KD.ZG", "SP.POP.TOTL", "IT.NET.USER.ZS"];
+  const kpis = kpiCodes.map((code) => {
+    const indicator = INDICATORS[code];
+    const latest = latestObservation(rowsFor(code, country.code));
+    return { indicator: indicator.label, unit: indicator.unit, value: latest?.value ?? null, year: latest?.date ?? null };
+  });
+  const trendIndicator = INDICATORS[selectedIndicator];
+  const comparison = (countries || []).map((item) => {
+    const latest = latestObservation(rowsFor("NY.GDP.MKTP.KD.ZG", item.code));
+    return { country: item.name, value: latest?.value ?? null, year: latest?.date ?? null };
+  }).filter((item) => item.value !== null);
+  const signals = Object.entries(INDICATORS).map(([code, indicator]) => {
+    const latest = latestObservation(rowsFor(code, country.code));
+    return { indicator: indicator.shortLabel, value: latest?.value ?? null, year: latest?.date ?? null, definition: indicator.definition, unit: indicator.unit };
+  });
+  return {
+    country: country.name,
+    countryCode: country.code,
+    trend: { label: trendIndicator.label, unit: trendIndicator.unit, series: chronologicalSeries(rowsFor(selectedIndicator, country.code)) },
+    kpis,
+    comparison,
+    signals,
+  };
+}

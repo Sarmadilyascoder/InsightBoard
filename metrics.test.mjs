@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, parseCustomCsv, percentChange } from "../metrics.js";
+import { buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, parseCustomCsv, percentChange } from "../metrics.js";
 
 const sparseRows = [
   { date: "2024", value: null },
@@ -23,5 +23,11 @@ assert.equal(custom.countries[0].name, "Sampleland", "custom CSV creates a selec
 assert.equal(custom.rowCount, 2, "custom CSV counts usable rows");
 assert.equal(latestObservation(custom.records.get("NY.GDP.MKTP.CD")).value, 110000000000, "custom CSV maps GDP into dashboard records");
 assert.throws(() => parseCustomCsv("country,year\nSampleland,2024\n"), /metric column/, "custom CSV requires at least one supported metric");
+
+const exportData = createDashboardExport({ country: custom.countries[0], selectedIndicator: "NY.GDP.MKTP.CD", records: custom.records, countries: custom.countries });
+assert.equal(exportData.country, "Sampleland", "export snapshot retains the selected country");
+assert.equal(exportData.kpis[0].value, 110000000000, "export snapshot includes latest KPI values");
+assert.deepEqual(exportData.trend.series, [{ year: 2023, value: 100000000000 }, { year: 2024, value: 110000000000 }], "export snapshot includes chronological trend data");
+assert.equal(exportData.signals.length, 5, "export snapshot includes all dashboard signals");
 
 console.log("InsightBoard metrics tests passed.");
