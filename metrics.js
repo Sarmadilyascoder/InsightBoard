@@ -1,8 +1,11 @@
-export const COUNTRIES = [
+export const BASELINE_COUNTRIES = [
   { code: "PAK", name: "Pakistan", accent: "#d9ff65" },
   { code: "IND", name: "India", accent: "#69d5ff" },
   { code: "BGD", name: "Bangladesh", accent: "#c6a0ff" },
+  { code: "USA", name: "United States", accent: "#ffad6b" },
 ];
+
+const ACCENTS = ["#d9ff65", "#69d5ff", "#c6a0ff", "#ffad6b", "#ff8c8c", "#7ee7c1"];
 
 export const INDICATORS = {
   "NY.GDP.MKTP.CD": { label: "GDP", shortLabel: "Gross domestic product", unit: "currency", definition: "Current US dollars" },
@@ -49,4 +52,15 @@ export function chronologicalSeries(rows) {
 
 export function buildWorldBankUrl(countryCodes, indicatorCode) {
   return `https://api.worldbank.org/v2/country/${countryCodes.join(";")}/indicator/${indicatorCode}?format=json&date=2015:2024&per_page=500`;
+}
+
+export function buildCountryCatalogueUrl() {
+  return "https://api.worldbank.org/v2/country?format=json&per_page=400";
+}
+
+export function countryAccent(code) {
+  const fixed = BASELINE_COUNTRIES.find((country) => country.code === code)?.accent;
+  if (fixed) return fixed;
+  const index = [...String(code)].reduce((total, character) => total + character.charCodeAt(0), 0) % ACCENTS.length;
+  return ACCENTS[index];
 }

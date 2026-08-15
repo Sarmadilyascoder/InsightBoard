@@ -1,30 +1,81 @@
-import { COUNTRIES, INDICATORS, buildWorldBankUrl, chronologicalSeries, formatValue, latestObservation, percentChange } from "./metrics.js";
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, percentChange } from "./metrics.js";
 
 const state = {
   selectedCountry: "PAK",
   selectedIndicator: "NY.GDP.MKTP.CD",
+  countries: [...BASELINE_COUNTRIES],
   records: new Map(),
+  requestId: 0,
 };
 
-const countrySelect = document.querySelector("#country-select");
+const countrySearch = document.querySelector("#country-search");
+const countryOptions = document.querySelector("#country-options");
 const indicatorSelect = document.querySelector("#indicator-select");
 const refreshButton = document.querySelector("#refresh-button");
 const retryButton = document.querySelector("#retry-button");
 
+const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+
+function countryByCode(code) {
+  return state.countries.find((country) => country.code === code) || BASELINE_COUNTRIES.find((country) => country.code === code) || null;
+}
+
+function selectedCountry() {
+  return countryByCode(state.selectedCountry) || BASELINE_COUNTRIES[0];
+}
+
+function comparisonCountries() {
+  const unique = new Map();
+  [selectedCountry(), ...BASELINE_COUNTRIES].filter(Boolean).forEach((country) => unique.set(country.code, country));
+  return [...unique.values()];
+}
+
 function populateControls() {
-  countrySelect.innerHTML = COUNTRIES.map((country) => `<option value="${country.code}">${country.name}</option>`).join("");
+  countryOptions.innerHTML = state.countries
+    .map((country) => `<option value="${escapeHtml(country.name)}" label="${escapeHtml(country.code)}"></option>`)
+    .join("");
+  countrySearch.value = selectedCountry().name;
   indicatorSelect.innerHTML = Object.entries(INDICATORS)
     .map(([code, indicator]) => `<option value="${code}">${indicator.label}</option>`)
     .join("");
-  countrySelect.value = state.selectedCountry;
   indicatorSelect.value = state.selectedIndicator;
+  document.querySelector("#country-count").textContent = `${state.countries.length} countries available`;
 }
 
-async function fetchIndicator(indicatorCode) {
+function matchCountry(query) {
+  const normalized = String(query || "").trim().toLocaleLowerCase();
+  if (!normalized) return null;
+  return state.countries.find((country) => country.name.toLocaleLowerCase() === normalized || country.code.toLocaleLowerCase() === normalized)
+    || state.countries.find((country) => country.name.toLocaleLowerCase().startsWith(normalized))
+    || null;
+}
+
+function exactCountry(query) {
+  const normalized = String(query || "").trim().toLocaleLowerCase();
+  if (!normalized) return null;
+  return state.countries.find((country) => country.name.toLocaleLowerCase() === normalized || country.code.toLocaleLowerCase() === normalized) || null;
+}
+
+async function fetchCountryCatalogue() {
+  const response = await fetch(buildCountryCatalogueUrl());
+  if (!response.ok) throw new Error(`World Bank country catalogue returned ${response.status}`);
+  const payload = await response.json();
+  if (!Array.isArray(payload) || !Array.isArray(payload[1])) throw new Error("World Bank country catalogue returned no entries");
+  const countries = payload[1]
+    .filter((entry) => /^[A-Z]{3}$/.test(entry?.id || "") && entry?.region?.id !== "NA" && entry?.name)
+    .map((entry) => ({ code: entry.id, name: entry.name, accent: countryAccent(entry.id) }))
+    .sort((first, second) => first.name.localeCompare(second.name));
+  if (!countries.length) throw new Error("World Bank country catalogue contained no countries");
+  return countries;
+}
+
+async function fetchIndicator(indicatorCode, countryCodes) {
   let lastError;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 9_000);
     try {
-      const response = await fetch(buildWorldBankUrl(COUNTRIES.map((country) => country.code), indicatorCode));
+      const response = await fetch(buildWorldBankUrl(countryCodes, indicatorCode), { signal: controller.signal });
       if (!response.ok) throw new Error(`World Bank API returned ${response.status}`);
       const payload = await response.json();
       if (!Array.isArray(payload) || !Array.isArray(payload[1])) throw new Error("World Bank API returned no observations");
@@ -32,38 +83,48 @@ async function fetchIndicator(indicatorCode) {
     } catch (error) {
       lastError = error;
       if (attempt === 1) await new Promise((resolve) => window.setTimeout(resolve, 250));
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
   throw lastError;
 }
 
 async function loadData() {
+  const currentRequest = ++state.requestId;
+  const countries = comparisonCountries();
   setLoading(true);
   setError(false);
   try {
     const entries = [];
+    const unavailableIndicators = [];
     for (const code of Object.keys(INDICATORS)) {
-      entries.push([code, await fetchIndicator(code)]);
+      try {
+        entries.push([code, await fetchIndicator(code, countries.map((country) => country.code))]);
+      } catch (error) {
+        console.warn(`InsightBoard could not load ${code}`, error);
+        unavailableIndicators.push(INDICATORS[code].label);
+        entries.push([code, []]);
+      }
       await new Promise((resolve) => window.setTimeout(resolve, 100));
     }
+    if (currentRequest !== state.requestId) return;
+    if (!entries.some(([, rows]) => rows.length)) throw new Error("No World Bank indicators were available");
     state.records = new Map(entries);
     render();
-    setStatus("Live public data", "live");
+    setStatus(unavailableIndicators.length ? `Live data · ${unavailableIndicators.length} metric delayed` : "Live public data", "live");
   } catch (error) {
+    if (currentRequest !== state.requestId) return;
     console.error("InsightBoard data load failed", error);
     setError(true);
     setStatus("Connection unavailable", "error");
   } finally {
-    setLoading(false);
+    if (currentRequest === state.requestId) setLoading(false);
   }
 }
 
 function rowsFor(indicatorCode, countryCode) {
   return (state.records.get(indicatorCode) || []).filter((row) => row.countryiso3code === countryCode);
-}
-
-function selectedCountry() {
-  return COUNTRIES.find((country) => country.code === state.selectedCountry);
 }
 
 function render() {
@@ -84,11 +145,7 @@ function renderKpis(country) {
     const latest = latestObservation(rows);
     const trend = percentChange(rows);
     const trendMarkup = trend === null ? "Latest observation" : `<span class="delta ${trend >= 0 ? "positive" : "negative"}">${trend >= 0 ? "↑" : "↓"} ${Math.abs(trend).toFixed(1)}% <small>since 2015</small></span>`;
-    return `<article class="kpi-card">
-      <div class="kpi-top"><span>${indicator.label}</span><span class="kpi-year">${latest?.date || "—"}</span></div>
-      <strong>${formatValue(latest?.value, indicator.unit)}</strong>
-      ${trendMarkup}
-    </article>`;
+    return `<article class="kpi-card"><div class="kpi-top"><span>${indicator.label}</span><span class="kpi-year">${latest?.date || "—"}</span></div><strong>${formatValue(latest?.value, indicator.unit)}</strong>${trendMarkup}</article>`;
   });
   document.querySelector("#kpi-grid").innerHTML = cards.join("");
   const years = kpiCodes.map((code) => latestObservation(rowsFor(code, country.code))?.date).filter(Boolean).map(Number);
@@ -117,7 +174,7 @@ function renderSvgChart(series, accent, unit) {
   const x = (index) => pad.left + (index / Math.max(series.length - 1, 1)) * (width - pad.left - pad.right);
   const y = (value) => pad.top + (1 - (value - min) / valueSpan) * (height - pad.top - pad.bottom);
   const path = series.map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)},${y(point.value).toFixed(1)}`).join(" ");
-  const area = `${path} L ${x(series.length - 1).toFixed(1)},${height - pad.bottom} L ${x(0).toFixed(1)},${height - pad.bottom} Z`;
+  const area = `${path} L ${x(series.length - 1).toFixed(1)},${height - pad.bottom} L ${x(0)},${height - pad.bottom} Z`;
   const grid = [0, 0.5, 1].map((step) => {
     const value = min + (max - min) * step;
     const yPos = y(value);
@@ -130,11 +187,11 @@ function renderSvgChart(series, accent, unit) {
 
 function renderBenchmark() {
   const code = "NY.GDP.MKTP.KD.ZG";
-  const values = COUNTRIES.map((country) => ({ country, latest: latestObservation(rowsFor(code, country.code)) })).filter(({ latest }) => latest);
+  const values = comparisonCountries().map((country) => ({ country, latest: latestObservation(rowsFor(code, country.code)) })).filter(({ latest }) => latest);
   const max = Math.max(...values.map(({ latest }) => Math.max(latest.value, 0)), 1);
   document.querySelector("#benchmark-list").innerHTML = values.map(({ country, latest }) => {
     const width = `${Math.max((Math.max(latest.value, 0) / max) * 100, 2)}%`;
-    return `<div class="benchmark-item"><div><span class="country-dot" style="--dot:${country.accent}"></span><strong>${country.name}</strong><small>${latest.date}</small></div><div class="benchmark-bar"><i style="width:${width};background:${country.accent}"></i></div><b>${formatValue(latest.value, "percent")}</b></div>`;
+    return `<div class="benchmark-item"><div><span class="country-dot" style="--dot:${country.accent}"></span><strong>${escapeHtml(country.name)}</strong><small>${latest.date}</small></div><div class="benchmark-bar"><i style="width:${width};background:${country.accent}"></i></div><b>${formatValue(latest.value, "percent")}</b></div>`;
   }).join("") || `<p class="chart-empty">No reported growth values.</p>`;
 }
 
@@ -161,10 +218,49 @@ function setStatus(text, kind) {
   status.className = `data-status ${kind}`;
 }
 
-countrySelect.addEventListener("change", (event) => { state.selectedCountry = event.target.value; render(); });
+function selectSearchedCountry() {
+  const country = matchCountry(countrySearch.value);
+  if (!country) {
+    countrySearch.value = selectedCountry().name;
+    setStatus("Choose a listed country", "error");
+    return;
+  }
+  if (country.code === state.selectedCountry) {
+    countrySearch.value = country.name;
+    return;
+  }
+  state.selectedCountry = country.code;
+  countrySearch.value = country.name;
+  loadData();
+}
+
+countrySearch.addEventListener("change", selectSearchedCountry);
+countrySearch.addEventListener("input", () => {
+  if (exactCountry(countrySearch.value)) selectSearchedCountry();
+});
+countrySearch.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    selectSearchedCountry();
+  }
+});
+countrySearch.addEventListener("blur", () => {
+  if (matchCountry(countrySearch.value)) selectSearchedCountry();
+  else countrySearch.value = selectedCountry().name;
+});
 indicatorSelect.addEventListener("change", (event) => { state.selectedIndicator = event.target.value; render(); });
 refreshButton.addEventListener("click", loadData);
 retryButton.addEventListener("click", loadData);
 
-populateControls();
-loadData();
+async function initialise() {
+  setStatus("Loading country directory", "loading");
+  try {
+    state.countries = await fetchCountryCatalogue();
+  } catch (error) {
+    console.warn("InsightBoard country catalogue failed; using baseline countries", error);
+  }
+  populateControls();
+  loadData();
+}
+
+initialise();
