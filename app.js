@@ -1,5 +1,5 @@
 // Version the dependency URL so a browser that cached an older metrics module cannot pair it with this newer application module after a GitHub Pages release.
-import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, normalizeBrandColor, parseCustomCsv, percentChange } from "./metrics.js?v=brand-1";
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, normalizeBrandColor, normalizeFooterText, parseCustomCsv, percentChange } from "./metrics.js?v=footer-1";
 
 const state = {
   selectedCountry: "PAK",
@@ -29,6 +29,8 @@ const brandingPrimary = document.querySelector("#branding-primary");
 const brandingAccent = document.querySelector("#branding-accent");
 const brandingLogo = document.querySelector("#branding-logo");
 const brandingLogoName = document.querySelector("#branding-logo-name");
+const brandingContact = document.querySelector("#branding-contact");
+const brandingFooterNote = document.querySelector("#branding-footer-note");
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -234,6 +236,8 @@ function currentBranding() {
     accentRgb: rgbFromHex(accent),
     logoData: state.branding.logoData,
     logoFormat: state.branding.logoFormat,
+    contactDetails: normalizeFooterText(brandingContact.value, 96),
+    footerNote: normalizeFooterText(brandingFooterNote.value, 72),
   };
 }
 
@@ -358,6 +362,20 @@ function addPdfTable(doc, branding, title, headers, rows, y) {
   return y + 10;
 }
 
+function addPdfFooters(doc, branding) {
+  const totalPages = doc.getNumberOfPages();
+  const details = [branding.companyName, branding.contactDetails, branding.footerNote].filter(Boolean).join(" · ");
+  for (let page = 1; page <= totalPages; page += 1) {
+    doc.setPage(page);
+    doc.setDrawColor(...branding.accentRgb);
+    doc.line(12, 286, 198, 286);
+    doc.setTextColor(...branding.primaryRgb);
+    doc.setFontSize(7);
+    doc.text(details || "InsightBoard report", 12, 291, { maxWidth: 145 });
+    doc.text(`Page ${page} of ${totalPages}`, 198, 291, { align: "right" });
+  }
+}
+
 async function exportPdf() {
   if (!state.records.size) {
     setStatus("Wait for dashboard data", "error");
@@ -419,6 +437,7 @@ async function exportPdf() {
     doc.setFillColor(...branding.primaryRgb);
     doc.rect(0, 0, 210, 8, "F");
     addPdfTable(doc, branding, `${snapshot.trend.label} trend · ${snapshot.country}`, ["Year", "Value"], snapshot.trend.series.map((point) => [point.year, formatValue(point.value, snapshot.trend.unit)]), 18);
+    addPdfFooters(doc, branding);
     doc.save(exportFileName("pdf"));
     setStatus("PDF downloaded", state.mode === "custom" ? "custom" : "live");
   } catch (error) {

@@ -40,6 +40,10 @@ export function normalizeBrandColor(value, fallback) {
   return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate.toUpperCase() : fallback;
 }
 
+export function normalizeFooterText(value, maxLength = 96) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
 export function percentChange(series) {
   const valid = (series || []).filter((point) => point?.value !== null && point?.value !== undefined);
   if (valid.length < 2 || valid[valid.length - 1].value === 0) return null;
