@@ -1,5 +1,5 @@
 // Version the dependency URL so a browser that cached an older metrics module cannot pair it with this newer application module after a GitHub Pages release.
-import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, parseCustomCsv, percentChange } from "./metrics.js?v=export-1";
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, createDashboardExport, formatValue, latestObservation, normalizeBrandColor, parseCustomCsv, percentChange } from "./metrics.js?v=brand-1";
 
 const state = {
   selectedCountry: "PAK",
@@ -9,6 +9,7 @@ const state = {
   requestId: 0,
   mode: "live",
   liveSnapshot: null,
+  branding: { logoData: null, logoFormat: null },
 };
 
 const countrySearch = document.querySelector("#country-search");
@@ -23,6 +24,11 @@ const returnLive = document.querySelector("#return-live");
 const csvHelp = document.querySelector("#csv-help");
 const exportExcelButton = document.querySelector("#export-excel");
 const exportPdfButton = document.querySelector("#export-pdf");
+const brandingCompany = document.querySelector("#branding-company");
+const brandingPrimary = document.querySelector("#branding-primary");
+const brandingAccent = document.querySelector("#branding-accent");
+const brandingLogo = document.querySelector("#branding-logo");
+const brandingLogoName = document.querySelector("#branding-logo-name");
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -212,6 +218,45 @@ function exportFileName(extension) {
   return `insightboard-${slug}-${new Date().toISOString().slice(0, 10)}.${extension}`;
 }
 
+function rgbFromHex(color) {
+  const normalized = normalizeBrandColor(color, "#0F1B27");
+  return [parseInt(normalized.slice(1, 3), 16), parseInt(normalized.slice(3, 5), 16), parseInt(normalized.slice(5, 7), 16)];
+}
+
+function currentBranding() {
+  const primary = normalizeBrandColor(brandingPrimary.value, "#0F1B27");
+  const accent = normalizeBrandColor(brandingAccent.value, "#D9FF65");
+  return {
+    companyName: (brandingCompany.value.trim() || "InsightBoard").slice(0, 48),
+    primary,
+    accent,
+    primaryRgb: rgbFromHex(primary),
+    accentRgb: rgbFromHex(accent),
+    logoData: state.branding.logoData,
+    logoFormat: state.branding.logoFormat,
+  };
+}
+
+async function loadBrandLogo() {
+  const file = brandingLogo.files?.[0];
+  if (!file) return;
+  if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 1_000_000) {
+    brandingLogo.value = "";
+    brandingLogoName.textContent = "Use PNG/JPG below 1 MB";
+    setStatus("Logo file needs correction", "error");
+    return;
+  }
+  const dataUrl = await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("Logo could not be read"));
+    reader.readAsDataURL(file);
+  });
+  state.branding = { logoData: dataUrl, logoFormat: file.type === "image/png" ? "PNG" : "JPEG" };
+  brandingLogoName.textContent = file.name;
+  setStatus("PDF logo ready", state.mode === "custom" ? "custom" : "live");
+}
+
 function setExportBusy(button, busy, label) {
   button.disabled = busy;
   button.textContent = busy ? "Preparing…" : label;
@@ -252,11 +297,13 @@ async function exportExcel() {
   }
 }
 
-async function chartPng() {
+async function chartPng(branding) {
   const source = document.querySelector("#trend-chart svg");
   if (!source) return null;
   const copy = source.cloneNode(true);
   copy.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  copy.querySelectorAll("path[stroke], circle[fill]").forEach((element) => element.setAttribute(element.tagName === "circle" ? "fill" : "stroke", branding.accent));
+  copy.querySelectorAll("linearGradient stop").forEach((stop) => stop.setAttribute("stop-color", branding.accent));
   copy.insertAdjacentHTML("afterbegin", "<style>.grid-line{stroke:#cbddee;stroke-opacity:.35;stroke-dasharray:3 5}.axis-label{fill:#506275;font:9px monospace}</style>");
   const url = URL.createObjectURL(new Blob([copy.outerHTML], { type: "image/svg+xml" }));
   try {
@@ -275,11 +322,11 @@ async function chartPng() {
   }
 }
 
-function addPdfTable(doc, title, headers, rows, y) {
+function addPdfTable(doc, branding, title, headers, rows, y) {
   const left = 12;
   const widths = headers.length === 4 ? [42, 34, 25, 85] : headers.length === 3 ? [75, 48, 57] : [100, 80];
   const drawHeader = () => {
-    doc.setFillColor(15, 27, 39);
+    doc.setFillColor(...branding.primaryRgb);
     doc.rect(left, y, 186, 7, "F");
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(7);
@@ -300,7 +347,7 @@ function addPdfTable(doc, title, headers, rows, y) {
       y = 18;
       drawHeader();
     }
-    doc.setDrawColor(220, 228, 235);
+    doc.setDrawColor(...branding.accentRgb);
     doc.line(left, y + height, left + 186, y + height);
     doc.setTextColor(35, 49, 62);
     doc.setFontSize(8);
@@ -322,46 +369,56 @@ async function exportPdf() {
     const JsPdf = module.jsPDF || module.default?.jsPDF;
     if (!JsPdf) throw new Error("PDF library unavailable");
     const snapshot = exportSnapshot();
+    const branding = currentBranding();
     const doc = new JsPdf({ unit: "mm", format: "a4" });
-    doc.setTextColor(10, 16, 24);
+    doc.setFillColor(...branding.primaryRgb);
+    doc.rect(0, 0, 210, 41, "F");
+    const headingX = branding.logoData ? 36 : 12;
+    if (branding.logoData) doc.addImage(branding.logoData, branding.logoFormat, 12, 10, 18, 18);
+    doc.setTextColor(255, 255, 255);
     doc.setFontSize(22);
-    doc.text("InsightBoard", 12, 18);
+    doc.text(branding.companyName, headingX, 18);
     doc.setFontSize(13);
-    doc.text(`${snapshot.country} dashboard report`, 12, 26);
-    doc.setTextColor(82, 99, 116);
+    doc.text(`${snapshot.country} dashboard report`, headingX, 26);
+    doc.setTextColor(225, 234, 241);
     doc.setFontSize(8);
-    doc.text(`Source: ${state.mode === "custom" ? "Private custom CSV in this browser" : "World Bank live data"} · Generated ${new Date().toLocaleString()}`, 12, 33);
-    doc.setDrawColor(210, 219, 227);
-    doc.line(12, 37, 198, 37);
+    doc.text(`Source: ${state.mode === "custom" ? "Private custom CSV in this browser" : "World Bank live data"} · Generated ${new Date().toLocaleString()}`, headingX, 33);
+    doc.setFillColor(...branding.accentRgb);
+    doc.rect(0, 38, 210, 3, "F");
     snapshot.kpis.forEach((item, index) => {
       const x = 12 + (index % 2) * 94;
-      const y = 46 + Math.floor(index / 2) * 23;
-      doc.setDrawColor(220, 228, 235);
-      doc.roundedRect(x, y, 87, 18, 2, 2, "S");
+      const y = 49 + Math.floor(index / 2) * 23;
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(...branding.accentRgb);
+      doc.roundedRect(x, y, 87, 18, 2, 2, "FD");
       doc.setTextColor(78, 93, 109);
       doc.setFontSize(7);
       doc.text(item.indicator.toUpperCase(), x + 4, y + 5);
-      doc.setTextColor(10, 16, 24);
+      doc.setTextColor(...branding.primaryRgb);
       doc.setFontSize(13);
       doc.text(formatValue(item.value, item.unit), x + 4, y + 13);
       doc.setTextColor(100, 114, 128);
       doc.setFontSize(7);
       doc.text(item.year || "Not reported", x + 70, y + 13, { align: "right" });
     });
-    doc.setTextColor(20, 32, 45);
+    doc.setTextColor(...branding.primaryRgb);
     doc.setFontSize(12);
-    doc.text(`${snapshot.trend.label} trend`, 12, 98);
-    const png = await chartPng();
-    if (png) doc.addImage(png, "PNG", 12, 103, 186, 66);
+    doc.text(`${snapshot.trend.label} trend`, 12, 101);
+    const png = await chartPng(branding);
+    if (png) doc.addImage(png, "PNG", 12, 106, 186, 66);
     else {
       doc.setFontSize(9);
-      doc.text("A chart image was not available; the underlying trend values are included on the next page.", 12, 108);
+      doc.text("A chart image was not available; the underlying trend values are included on the next page.", 12, 111);
     }
     doc.addPage();
-    let y = addPdfTable(doc, "GDP growth comparison", ["Country", "Value", "Observed year"], snapshot.comparison.map((item) => [item.country, formatValue(item.value, "percent"), item.year || "Not reported"]), 18);
-    addPdfTable(doc, "Latest observed values", ["Indicator", "Value", "Observed year", "Definition"], snapshot.signals.map((item) => [item.indicator, formatValue(item.value, item.unit), item.year || "Not reported", item.definition]), y);
+    doc.setFillColor(...branding.primaryRgb);
+    doc.rect(0, 0, 210, 8, "F");
+    let y = addPdfTable(doc, branding, "GDP growth comparison", ["Country", "Value", "Observed year"], snapshot.comparison.map((item) => [item.country, formatValue(item.value, "percent"), item.year || "Not reported"]), 18);
+    addPdfTable(doc, branding, "Latest observed values", ["Indicator", "Value", "Observed year", "Definition"], snapshot.signals.map((item) => [item.indicator, formatValue(item.value, item.unit), item.year || "Not reported", item.definition]), y);
     doc.addPage();
-    addPdfTable(doc, `${snapshot.trend.label} trend · ${snapshot.country}`, ["Year", "Value"], snapshot.trend.series.map((point) => [point.year, formatValue(point.value, snapshot.trend.unit)]), 18);
+    doc.setFillColor(...branding.primaryRgb);
+    doc.rect(0, 0, 210, 8, "F");
+    addPdfTable(doc, branding, `${snapshot.trend.label} trend · ${snapshot.country}`, ["Year", "Value"], snapshot.trend.series.map((point) => [point.year, formatValue(point.value, snapshot.trend.unit)]), 18);
     doc.save(exportFileName("pdf"));
     setStatus("PDF downloaded", state.mode === "custom" ? "custom" : "live");
   } catch (error) {
@@ -510,6 +567,7 @@ sampleDownload.addEventListener("click", downloadSampleCsv);
 returnLive.addEventListener("click", returnToLiveData);
 exportExcelButton.addEventListener("click", exportExcel);
 exportPdfButton.addEventListener("click", exportPdf);
+brandingLogo.addEventListener("change", loadBrandLogo);
 
 async function initialise() {
   setStatus("Loading country directory", "loading");

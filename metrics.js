@@ -35,6 +35,11 @@ export function formatValue(value, unit) {
   return Number(value).toLocaleString("en-US", { maximumFractionDigits: 1 });
 }
 
+export function normalizeBrandColor(value, fallback) {
+  const candidate = String(value || "").trim();
+  return /^#[0-9a-f]{6}$/i.test(candidate) ? candidate.toUpperCase() : fallback;
+}
+
 export function percentChange(series) {
   const valid = (series || []).filter((point) => point?.value !== null && point?.value !== undefined);
   if (valid.length < 2 || valid[valid.length - 1].value === 0) return null;
