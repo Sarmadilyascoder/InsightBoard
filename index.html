@@ -29,6 +29,7 @@
           <label class="control-field metric-field"><span>Trend metric</span><select id="indicator-select" aria-label="Select trend metric"></select></label>
           <div class="control-note"><span>Latest figures</span><strong id="latest-year">—</strong></div>
         </section>
+        <section class="custom-data-card" aria-labelledby="custom-data-title"><div><p class="eyebrow">Your data / private in this browser</p><h2 id="custom-data-title">Preview your own CSV</h2><p>Upload a simple country data file to explore it in this dashboard. Your file is not uploaded or saved online.</p><p class="csv-help" id="csv-help">Required: <code>country</code>, <code>year</code>. Metrics: <code>gdp</code>, <code>gdp_growth</code>, <code>population</code>, <code>unemployment</code>, <code>internet_use</code>.</p></div><div class="custom-data-actions"><label class="file-picker" for="custom-file"><span>Choose CSV</span><input id="custom-file" type="file" accept=".csv,text/csv" /><small id="custom-file-name">No file selected</small></label><button class="secondary-action" id="sample-download" type="button">Download sample</button><button class="live-action" id="return-live" type="button" hidden>Return to World Bank data</button></div></section>
         <div id="error-state" class="error-state" role="alert" hidden><div><strong>Live data is temporarily unavailable.</strong><span>InsightBoard could not reach the World Bank API. Please refresh to try again.</span></div><button id="retry-button" type="button">Try again</button></div>
         <section class="kpi-grid" aria-label="Key indicators" id="kpi-grid"><article class="kpi-card loading-card"><span></span><b></b><small></small></article><article class="kpi-card loading-card"><span></span><b></b><small></small></article><article class="kpi-card loading-card"><span></span><b></b><small></small></article><article class="kpi-card loading-card"><span></span><b></b><small></small></article></section>
         <section class="dashboard-grid" id="compare"><article class="panel trend-panel"><div class="panel-head"><div><p class="eyebrow">Trend line</p><h2 id="trend-title">Loading indicator trend</h2></div><span class="chart-legend"><i></i><span id="chart-country-label">—</span></span></div><div class="chart-wrap" id="trend-chart" aria-label="Indicator trend chart" aria-live="polite"></div><div class="chart-foot"><span id="chart-range">Fetching observations</span><span id="chart-change">—</span></div></article><article class="panel benchmark-panel"><div class="panel-head"><div><p class="eyebrow">Comparison context</p><h2>GDP growth comparison</h2></div><span class="unit-label">Annual %</span></div><div class="benchmark-list" id="benchmark-list" aria-live="polite"></div></article></section>
@@ -37,6 +38,6 @@
         <footer><span>Designed and built by <strong>Sarmad Ilyas</strong></span><span>InsightBoard · World Bank open data</span></footer>
       </main>
     </div>
-    <script type="module" src="app.js"></script>
+    <script type="module" src="app.js?v=custom-csv-1"></script>
   </body>
 </html>

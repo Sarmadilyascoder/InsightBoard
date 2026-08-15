@@ -1,5 +1,5 @@
 // Version the dependency URL so a browser that cached an older metrics module cannot pair it with this newer application module after a GitHub Pages release.
-import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, percentChange } from "./metrics.js?v=global-country-1";
+import { BASELINE_COUNTRIES, INDICATORS, buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, parseCustomCsv, percentChange } from "./metrics.js?v=custom-data-1";
 
 const state = {
   selectedCountry: "PAK",
@@ -7,6 +7,8 @@ const state = {
   countries: [...BASELINE_COUNTRIES],
   records: new Map(),
   requestId: 0,
+  mode: "live",
+  liveSnapshot: null,
 };
 
 const countrySearch = document.querySelector("#country-search");
@@ -14,6 +16,11 @@ const countryOptions = document.querySelector("#country-options");
 const indicatorSelect = document.querySelector("#indicator-select");
 const refreshButton = document.querySelector("#refresh-button");
 const retryButton = document.querySelector("#retry-button");
+const customFile = document.querySelector("#custom-file");
+const customFileName = document.querySelector("#custom-file-name");
+const sampleDownload = document.querySelector("#sample-download");
+const returnLive = document.querySelector("#return-live");
+const csvHelp = document.querySelector("#csv-help");
 
 const escapeHtml = (value) => String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
 
@@ -26,6 +33,7 @@ function selectedCountry() {
 }
 
 function comparisonCountries() {
+  if (state.mode === "custom") return state.countries;
   const unique = new Map();
   [selectedCountry(), ...BASELINE_COUNTRIES].filter(Boolean).forEach((country) => unique.set(country.code, country));
   return [...unique.values()];
@@ -92,6 +100,10 @@ async function fetchIndicator(indicatorCode, countryCodes) {
 }
 
 async function loadData() {
+  if (state.mode === "custom") {
+    setStatus("Custom CSV preview", "custom");
+    return;
+  }
   const currentRequest = ++state.requestId;
   const countries = comparisonCountries();
   setLoading(true);
@@ -122,6 +134,71 @@ async function loadData() {
   } finally {
     if (currentRequest === state.requestId) setLoading(false);
   }
+}
+
+function setCustomMessage(message, isError = false) {
+  csvHelp.textContent = message;
+  csvHelp.classList.toggle("csv-error", isError);
+}
+
+async function loadCustomCsv() {
+  const file = customFile.files?.[0];
+  if (!file) return;
+  if (file.size > 1_000_000) {
+    setCustomMessage("Please choose a CSV smaller than 1 MB.", true);
+    return;
+  }
+  try {
+    const parsed = parseCustomCsv(await file.text());
+    if (state.mode === "live") {
+      state.liveSnapshot = { countries: state.countries, selectedCountry: state.selectedCountry, records: state.records };
+    }
+    state.requestId += 1;
+    state.mode = "custom";
+    state.countries = parsed.countries;
+    state.records = parsed.records;
+    state.selectedCountry = parsed.countries[0].code;
+    populateControls();
+    render();
+    setError(false);
+    setStatus(`Custom CSV · ${parsed.countries.length} countries · ${parsed.rowCount} rows`, "custom");
+    customFileName.textContent = file.name;
+    returnLive.hidden = false;
+    refreshButton.title = "Return to live World Bank data";
+    setDataModeLabel(true);
+    setCustomMessage("Custom preview active. Your file stays only in this browser.");
+  } catch (error) {
+    console.warn("InsightBoard custom CSV rejected", error);
+    setCustomMessage(error.message || "This CSV could not be read.", true);
+    setStatus("Custom file needs correction", "error");
+  }
+}
+
+function returnToLiveData() {
+  const snapshot = state.liveSnapshot;
+  state.mode = "live";
+  state.countries = snapshot?.countries || [...BASELINE_COUNTRIES];
+  state.selectedCountry = snapshot?.selectedCountry || "PAK";
+  state.records = snapshot?.records || new Map();
+  state.liveSnapshot = null;
+  customFile.value = "";
+  customFileName.textContent = "No file selected";
+  returnLive.hidden = true;
+  refreshButton.title = "Refresh data";
+  setDataModeLabel(false);
+  setCustomMessage("Required: country, year. Metrics: gdp, gdp_growth, population, unemployment, internet_use.");
+  populateControls();
+  loadData();
+}
+
+function downloadSampleCsv() {
+  const sample = "country,code,year,gdp,gdp_growth,population,unemployment,internet_use\nSampleland,SMP,2022,120000000000,3.1,45000000,7.2,72.5\nSampleland,SMP,2023,129000000000,4.0,45800000,6.8,75.1\nSampleland,SMP,2024,138000000000,4.5,46600000,6.2,78.6\nDemo Republic,DMO,2022,86000000000,2.2,31000000,8.1,65.4\nDemo Republic,DMO,2023,89000000000,3.5,31500000,7.8,68.2\nDemo Republic,DMO,2024,95000000000,4.1,32000000,7.1,71.0\n";
+  const url = URL.createObjectURL(new Blob([sample], { type: "text/csv" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "insightboard-sample-data.csv";
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 function rowsFor(indicatorCode, countryCode) {
@@ -219,6 +296,10 @@ function setStatus(text, kind) {
   status.className = `data-status ${kind}`;
 }
 
+function setDataModeLabel(isCustom) {
+  document.querySelector(".live-dot").innerHTML = isCustom ? "<i></i> Custom browser preview" : "<i></i> Live public data";
+}
+
 function selectSearchedCountry() {
   const country = matchCountry(countrySearch.value);
   if (!country) {
@@ -232,7 +313,8 @@ function selectSearchedCountry() {
   }
   state.selectedCountry = country.code;
   countrySearch.value = country.name;
-  loadData();
+  if (state.mode === "custom") render();
+  else loadData();
 }
 
 countrySearch.addEventListener("change", selectSearchedCountry);
@@ -250,8 +332,11 @@ countrySearch.addEventListener("blur", () => {
   else countrySearch.value = selectedCountry().name;
 });
 indicatorSelect.addEventListener("change", (event) => { state.selectedIndicator = event.target.value; render(); });
-refreshButton.addEventListener("click", loadData);
+refreshButton.addEventListener("click", () => { if (state.mode === "custom") returnToLiveData(); else loadData(); });
 retryButton.addEventListener("click", loadData);
+customFile.addEventListener("change", loadCustomCsv);
+sampleDownload.addEventListener("click", downloadSampleCsv);
+returnLive.addEventListener("click", returnToLiveData);
 
 async function initialise() {
   setStatus("Loading country directory", "loading");

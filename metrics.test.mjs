@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, percentChange } from "../metrics.js";
+import { buildCountryCatalogueUrl, buildWorldBankUrl, chronologicalSeries, countryAccent, formatValue, latestObservation, parseCustomCsv, percentChange } from "../metrics.js";
 
 const sparseRows = [
   { date: "2024", value: null },
@@ -17,5 +17,11 @@ assert.equal(buildWorldBankUrl(["PAK", "IND"], "NY.GDP.MKTP.CD"), "https://api.w
 assert.equal(buildCountryCatalogueUrl(), "https://api.worldbank.org/v2/country?format=json&per_page=400", "country catalogue helper returns the full World Bank directory endpoint");
 assert.equal(countryAccent("USA"), "#ffad6b", "fixed comparison countries retain stable accent colors");
 assert.equal(countryAccent("CAN"), countryAccent("CAN"), "dynamic country colors are deterministic");
+
+const custom = parseCustomCsv("country,code,year,gdp,gdp_growth,population\nSampleland,SMP,2023,100000000000,2.5,1000000\nSampleland,SMP,2024,110000000000,3.1,1050000\n");
+assert.equal(custom.countries[0].name, "Sampleland", "custom CSV creates a selectable country");
+assert.equal(custom.rowCount, 2, "custom CSV counts usable rows");
+assert.equal(latestObservation(custom.records.get("NY.GDP.MKTP.CD")).value, 110000000000, "custom CSV maps GDP into dashboard records");
+assert.throws(() => parseCustomCsv("country,year\nSampleland,2024\n"), /metric column/, "custom CSV requires at least one supported metric");
 
 console.log("InsightBoard metrics tests passed.");
